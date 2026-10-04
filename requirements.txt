@@ -1,0 +1,8 @@
+# Core pipeline dependencies (see docs/PIPELINE.md §7)
+spacy>=3.7            # stage 2 — linguistics; run: python -m spacy download en_core_web_sm
+yake>=0.4.8          # stage 3 — keyword candidates
+rapidfuzz>=3.0       # stage 4 — fuzzy canonicalization + stage 7 dedupe
+sentence-transformers>=2.7  # stage 5 — embeddings (loads BAAI/bge-m3)
+better_profanity>=0.7       # stage 7 — content filter
+supabase>=2.0        # stage 8 — pgvector store client
+numpy>=1.24          # cosine scoring in stage 6
