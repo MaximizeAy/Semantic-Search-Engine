@@ -88,7 +88,7 @@ class Stage(Protocol):
 | 2 | Linguistics | tokenize, lemmatize, POS, noun-chunks, NER → raw tag candidates | NLP | spaCy `en_core_web_sm` | todo |
 | 3 | Candidate tags | score & rank keyword candidates | NLP semantics | `yake` or `keybert` | todo |
 | 4 | Fuzzy canonicalize | collapse typos/variants onto a controlled tag vocabulary | fuzzy matching | `rapidfuzz` | todo |
-| 5 | Embed | semantic vectors for product text (+ candidate tags) | NLP semantics | `sentence-transformers` (`all-MiniLM-L6-v2`, 384-dim) | todo |
+| 5 | Embed | semantic vectors for product text (+ candidate tags) | NLP semantics | `sentence-transformers` — `BAAI/bge-m3` (1024-dim, multilingual), batch-encoded on Kaggle GPU | todo |
 | 6 | Classify / score | product category + tag relevance ranking | classification | zero-shot via label embeddings (no training to start) | todo |
 | 7 | Content filter | denylist, profanity/PII, dedupe, threshold, cap N | content filtering | `better_profanity` + fuzzy/semantic dedupe | todo |
 | 8 | Index / search | persist & query vectors | — | **Supabase pgvector** | todo |
@@ -101,15 +101,34 @@ class Stage(Protocol):
 - **Stage 3 — Candidates.** Rank the raw candidates so we keep the salient ones. YAKE is
   unsupervised and dependency-light; KeyBERT reuses the stage-5 encoder if we want
   embedding-based keywording.
-- **Stage 4 — Fuzzy canonicalize.** A **controlled tag vocabulary** (taxonomy) is the anchor:
-  RapidFuzz maps noisy candidates (`"wireles"`, `"blutooth"`) onto canonical tags
-  (`"wireless"`, `"bluetooth"`). This is also where the query path corrects typos.
-- **Stage 5 — Embed.** One encoder, used in **both** paths, so query and product vectors live
-  in the same space. `all-MiniLM-L6-v2` → 384-dim, fast, CPU-friendly. Model id is a config
-  value so we can upgrade later without touching call sites.
-- **Stage 6 — Classify / score.** Start training-free: embed category labels once, assign each
-  product to its nearest label (zero-shot). Tag relevance = cosine(tag, product). A supervised
-  classifier can replace this later without changing the interface.
+- **Stage 4 — Fuzzy canonicalize.** A **controlled tag vocabulary** is the anchor, built from
+  **two sources combined** (decided):
+  - **Imported taxonomy** — a curated e-commerce taxonomy backbone (e.g. Google Product
+    Taxonomy) provides clean canonical terms.
+  - **Data-discovered** — frequent noun-chunks / entities mined from the catalog itself,
+    capturing real, slang, and local-product terms the taxonomy will not have.
+
+  The two are merged: discovered terms that are fuzzy/semantic near-duplicates of a taxonomy
+  term fold into it as synonyms; genuinely novel frequent terms are added as new entries flagged
+  `discovered`. RapidFuzz then maps noisy candidates (`"wireles"`, `"blutooth"`) onto the
+  canonical tag. This stage also corrects typos on the query path.
+- **Stage 5 — Embed.** One encoder, used in **both** paths, so query and product vectors live in
+  the same space. **`BAAI/bge-m3`** → 1024-dim, multilingual (handles slang / local-language
+  terms), no query/passage prefix needed. Product embeddings are **batch-encoded on Kaggle GPU**
+  (offline). The model id is a config value, but note the dimension is baked into the pgvector
+  column, so a model swap is a schema migration. **Constraint:** the online query path must embed
+  queries with this *same* model — so wherever queries are served needs the model loaded (trivial
+  on Kaggle; a CPU single-query encode is acceptable for `bge-m3`, a 7B model would require an
+  always-on GPU).
+- **Stage 6 — Classify / score.** Category assignment uses **both approaches combined** (decided),
+  so we keep the slang/local flavour *and* a clean canonical category:
+  - **Fixed list (zero-shot)** — embed a known category label set once; assign each product its
+    nearest label. This is the clean "depiction" of the product's category.
+  - **Discovered** — slang / local category-like terms mined from the data are preserved as
+    secondary category tags rather than discarded, so local products keep their own vocabulary.
+
+  Tag relevance = cosine(tag, product). A supervised classifier can replace the zero-shot step
+  later without changing the interface.
 - **Stage 7 — Content filter.** The safety gate: drop banned/unsafe tags, strip near-duplicates
   (fuzzy + semantic), apply a confidence threshold, cap the tag count. Always the last step
   before anything is persisted or returned.
@@ -130,24 +149,28 @@ database, so there is one source of truth.
 ```sql
 create extension if not exists vector;
 
--- Controlled tag vocabulary (stage 4 anchor + stage 7 allowlist)
+-- Controlled tag vocabulary (stage 4 anchor + stage 7 allowlist).
+-- Hybrid: imported taxonomy terms + data-discovered terms, with synonym folding.
 create table tag_vocabulary (
-    id          bigint generated always as identity primary key,
-    tag         text not null unique,
-    category    text,
-    created_at  timestamptz default now()
+    id            bigint generated always as identity primary key,
+    tag           text not null unique,
+    category      text,
+    source        text not null default 'taxonomy',   -- 'taxonomy' | 'discovered'
+    canonical_id  bigint references tag_vocabulary(id), -- null = canonical; set = synonym of
+    created_at    timestamptz default now()
 );
 
 -- Products + their embedding
 create table products (
-    id          bigint generated always as identity primary key,
-    external_id text unique,
-    name        text not null,
-    description text,
-    category    text,                       -- assigned in stage 6
-    tags        text[],                     -- canonical tags, stage 4 + 7 output
-    embedding   vector(384),                -- stage 5, all-MiniLM-L6-v2
-    indexed_at  timestamptz default now()
+    id                 bigint generated always as identity primary key,
+    external_id        text unique,
+    name               text not null,
+    description        text,
+    category           text,                -- stage 6 zero-shot (canonical "depiction")
+    discovered_categories text[],           -- stage 6 slang / local category terms, preserved
+    tags               text[],              -- canonical tags, stage 4 + 7 output
+    embedding          vector(1024),        -- stage 5, BAAI/bge-m3
+    indexed_at         timestamptz default now()
 );
 
 -- Approximate-nearest-neighbour index for the online query path
@@ -157,7 +180,7 @@ create index on products using hnsw (embedding vector_cosine_ops);
 Online search is a single RPC (cosine distance, `<=>`):
 
 ```sql
-create or replace function search_products(query_embedding vector(384), match_count int)
+create or replace function search_products(query_embedding vector(1024), match_count int)
 returns table (id bigint, name text, category text, tags text[], score float)
 language sql stable as $$
     select p.id, p.name, p.category, p.tags,
@@ -168,9 +191,8 @@ language sql stable as $$
 $$;
 ```
 
-> Decisions to confirm: embedding dimension is tied to the stage-5 model
-> (384 for MiniLM — changing the model changes the column type and index). HNSW vs IVFFlat
-> index can be tuned once we know catalog size.
+> Note: embedding dimension is tied to the stage-5 model (1024 for `bge-m3` — changing the model
+> changes the column type and index). HNSW vs IVFFlat index can be tuned once we know catalog size.
 
 ## 6. Proposed repository structure
 
@@ -207,12 +229,13 @@ so any stage can be run, tested, or swapped alone.
 spacy            # stage 2
 yake             # stage 3   (or keybert)
 rapidfuzz        # stage 4
-sentence-transformers  # stage 5
+sentence-transformers  # stage 5  (loads BAAI/bge-m3)
 better_profanity # stage 7
 supabase         # stage 8  (python client)
 ```
 
-Plus `python -m spacy download en_core_web_sm`.
+Plus `python -m spacy download en_core_web_sm`. The `bge-m3` weights (~2.2 GB) download on first
+use — pre-fetched in the Kaggle environment so the GPU indexing job starts clean.
 
 ## 8. Evaluation strategy
 
@@ -232,11 +255,22 @@ Plus `python -m spacy download en_core_web_sm`.
 7. End-to-end `TagPipeline` and `SearchPipeline`, wired in the demo notebook.
 8. Eval harness with the noise-generated test set.
 
-## 10. Open questions
+## 10. Decisions & open questions
 
-- **Tag vocabulary source** — seed it from the catalog's own frequent noun-chunks, or import an
-  existing e-commerce taxonomy?
-- **Embedding model** — start with `all-MiniLM-L6-v2` (fast, 384-dim); revisit if quality is short.
-- **Category set** — fixed known list (enables zero-shot), or discovered from data?
-- **Index tuning** — HNSW vs IVFFlat, and the distance threshold for "no good match".
+**Decided:**
+
+- **Tag vocabulary** — *hybrid*: imported e-commerce taxonomy backbone **+** data-discovered terms
+  (keeps slang / local-product vocabulary), merged with synonym folding. (§3 stage 4, §5)
+- **Category set** — *hybrid*: fixed-list zero-shot for the canonical category depiction **+**
+  discovered slang/local category terms preserved alongside it. (§3 stage 6, §5)
+- **Embedding model** — `BAAI/bge-m3` (1024-dim, multilingual), batch-encoded on Kaggle GPU. (§3 stage 5)
+
+**Still open:**
+
+- **Query-time embedding host** — where the online query encode runs (Kaggle-only demo vs. a
+  deployed serving host). Determines whether the `bge-m3` model must be available outside Kaggle.
+- **Taxonomy source** — which e-commerce taxonomy to import as the backbone (Google Product
+  Taxonomy is the default candidate).
+- **Index tuning** — HNSW vs IVFFlat, and the distance threshold below which a query returns
+  "no good match".
 ```
