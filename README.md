@@ -34,8 +34,12 @@ python -m spacy download en_core_web_sm
 cp .env.example .env            # then fill in your Supabase project details
 ```
 
-Create a dedicated Supabase project, enable `pgvector`, and run
-[`db/schema.sql`](db/schema.sql) in its SQL editor.
+Supabase (you can reuse an existing project — the engine lives in its own
+`semantic_search` schema, isolated from your `public` tables):
+
+1. Run [`db/schema.sql`](db/schema.sql) in the SQL editor.
+2. Project Settings → API → **Exposed schemas**: add `semantic_search`.
+3. Use the **service-role key** for indexing (bypasses RLS).
 
 ## Usage
 

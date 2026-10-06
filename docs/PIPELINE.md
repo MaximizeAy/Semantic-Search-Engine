@@ -143,10 +143,14 @@ that boundary explicit and prevents it being wired into inference by accident.
 
 ## 5. Data model (Supabase / pgvector)
 
-Vectors live in Supabase Postgres with the `vector` extension. This doubles as the product
-database, so there is one source of truth.
+Vectors live in Supabase Postgres with the `vector` extension. The engine's tables live in a
+dedicated **`semantic_search` schema** so an existing project can be reused without colliding
+with its `public` tables. The runnable, authoritative version (schema, grants, RLS, security
+-definer search RPC) is [`db/schema.sql`](../db/schema.sql); the excerpt below omits those
+details for readability.
 
 ```sql
+create schema if not exists semantic_search;
 create extension if not exists vector;
 
 -- Controlled tag vocabulary (stage 4 anchor + stage 7 allowlist).

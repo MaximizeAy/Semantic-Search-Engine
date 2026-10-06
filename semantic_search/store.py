@@ -21,11 +21,13 @@ class SupabaseVectorStore:
         self,
         url: Optional[str] = None,
         key: Optional[str] = None,
+        schema: Optional[str] = None,
         table: str = "products",
         search_fn: str = "search_products",
     ):
         self.url = url or os.environ.get("SUPABASE_URL")
         self.key = key or os.environ.get("SUPABASE_KEY")
+        self.schema = schema or os.environ.get("SUPABASE_SCHEMA", "semantic_search")
         self.table = table
         self.search_fn = search_fn
         self._client = None
@@ -43,6 +45,10 @@ class SupabaseVectorStore:
             self._client = create_client(self.url, self.key)
         return self._client
 
+    def _db(self):
+        """A client bound to the engine's schema (default: semantic_search)."""
+        return self.client.schema(self.schema)
+
     def upsert(self, record: Record) -> None:
         """Write a processed product record to the products table."""
         row = {
@@ -54,13 +60,13 @@ class SupabaseVectorStore:
             "tags": record.get("tags", []),
             "embedding": record.get("embedding"),
         }
-        self.client.table(self.table).upsert(
+        self._db().table(self.table).upsert(
             row, on_conflict="external_id"
         ).execute()
 
     def search(self, query_embedding: List[float], k: int = 10) -> List[Dict[str, Any]]:
         """Cosine similarity search via the search_products RPC."""
-        resp = self.client.rpc(
+        resp = self._db().rpc(
             self.search_fn,
             {"query_embedding": query_embedding, "match_count": k},
         ).execute()
