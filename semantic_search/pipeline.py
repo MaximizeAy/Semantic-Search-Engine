@@ -63,12 +63,20 @@ class SearchPipeline:
 
 
 def build_tag_pipeline(
-    vocabulary: TagVocabulary,
-    categories: Sequence[str],
+    vocabulary: Optional[TagVocabulary] = None,
+    categories: Optional[Sequence[str]] = None,
     embedder: Optional[Embedder] = None,
     content_filter: Optional[ContentFilter] = None,
 ) -> TagPipeline:
-    """Wire the default offline pipeline (stages 1-7) with a shared embedder."""
+    """Wire the default offline pipeline (stages 1-7) with a shared embedder.
+
+    ``vocabulary`` and ``categories`` default to the seed taxonomy
+    (semantic_search.taxonomy) when not supplied.
+    """
+    from . import taxonomy  # lazy to avoid import cost when custom values are passed
+
+    vocabulary = vocabulary if vocabulary is not None else taxonomy.build_vocabulary()
+    categories = categories if categories is not None else taxonomy.default_categories()
     embedder = embedder or Embedder()
     canonicalizer = FuzzyCanonicalizer(vocabulary)
     categorizer = ZeroShotCategorizer(embedder, categories)
@@ -87,10 +95,16 @@ def build_tag_pipeline(
 
 def build_search_pipeline(
     store,
-    vocabulary: TagVocabulary,
+    vocabulary: Optional[TagVocabulary] = None,
     embedder: Optional[Embedder] = None,
 ) -> SearchPipeline:
-    """Wire the default online query pipeline, sharing the embedder/vocabulary."""
+    """Wire the default online query pipeline, sharing the embedder/vocabulary.
+
+    ``vocabulary`` defaults to the seed taxonomy when not supplied.
+    """
+    from . import taxonomy  # lazy
+
+    vocabulary = vocabulary if vocabulary is not None else taxonomy.build_vocabulary()
     embedder = embedder or Embedder()
     return SearchPipeline(
         normalize=NormalizeStage(),

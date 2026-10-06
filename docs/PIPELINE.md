@@ -264,13 +264,13 @@ use — pre-fetched in the Kaggle environment so the GPU indexing job starts cle
 - **Category set** — *hybrid*: fixed-list zero-shot for the canonical category depiction **+**
   discovered slang/local category terms preserved alongside it. (§3 stage 6, §5)
 - **Embedding model** — `BAAI/bge-m3` (1024-dim, multilingual), batch-encoded on Kaggle GPU. (§3 stage 5)
+- **Taxonomy source** — Google Product Taxonomy, top level (21 categories) as the fixed category
+  backbone, plus a curated starter tag vocabulary. Seeded in `semantic_search/taxonomy.py`.
 
 **Still open:**
 
 - **Query-time embedding host** — where the online query encode runs (Kaggle-only demo vs. a
   deployed serving host). Determines whether the `bge-m3` model must be available outside Kaggle.
-- **Taxonomy source** — which e-commerce taxonomy to import as the backbone (Google Product
-  Taxonomy is the default candidate).
 - **Index tuning** — HNSW vs IVFFlat, and the distance threshold below which a query returns
   "no good match".
 ```
