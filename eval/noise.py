@@ -72,7 +72,9 @@ class NoiseGenerator:
         if len(word) < 3:
             return word
 
-        index = random.randrange(1, len(word) - 2)
+        # max(2, ...) keeps a valid range for 3-char words (randrange(1, 1)
+        # would otherwise raise); behaviour is unchanged for longer words.
+        index = random.randrange(1, max(2, len(word) - 2))
 
         chars = list(word)
 
@@ -87,7 +89,9 @@ class NoiseGenerator:
         if len(word) < 2:
             return word
 
-        index = random.randrange(1, len(word) - 1)
+        # max(2, ...) keeps a valid range for 2-char words (randrange(1, 1)
+        # would otherwise raise); behaviour is unchanged for longer words.
+        index = random.randrange(1, max(2, len(word) - 1))
 
         return (
             word[:index]

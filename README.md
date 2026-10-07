@@ -115,7 +115,19 @@ weekly (needs `SUPABASE_URL` / `SUPABASE_KEY` repo secrets; active once merged t
 > the growing discovered-term vocabulary are reflected) and **re-embeds** changed
 > products. "Up to date" = catalog + vocabulary freshness, not model retraining.
 
+## Tests
+
+```bash
+python -m unittest discover -s tests -t .
+```
+
+Pure-logic tests (normalize, taxonomy, noise, stage wiring, service, store) run
+with no third-party deps — stages are tested through their injection seams with
+fakes. Tests that need a real library (spaCy, RapidFuzz, YAKE, numpy) are guarded
+and run in CI (`.github/workflows/tests.yml`), skipping cleanly where absent.
+
 ## Status
 
 Pipeline runs end-to-end (validated on Kaggle GPU). Service + weekly rebuild in
-place. See `docs/PIPELINE.md` §9 for the roadmap and §10 for open decisions.
+place; test suite green. See `docs/PIPELINE.md` §9 for the roadmap and §10 for
+open decisions.
