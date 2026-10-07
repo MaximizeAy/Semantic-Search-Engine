@@ -1,0 +1,38 @@
+name: Weekly catalog rebuild
+
+# Re-tags and re-indexes the catalog once a week so tags/embeddings stay fresh
+# as the discovered vocabulary grows and listings change.
+#
+# NOTE: scheduled workflows run only on the repository's DEFAULT branch, so this
+# does nothing until merged to main. It also needs two repo secrets:
+#   SUPABASE_URL, SUPABASE_KEY  (service-role key)
+# Runs on CPU here (no GPU) — fine for small/medium catalogs; move to a GPU host
+# if the catalog grows large.
+
+on:
+  schedule:
+    - cron: "0 3 * * 1"   # Mondays 03:00 UTC
+  workflow_dispatch:       # allow manual runs from the Actions tab
+
+jobs:
+  rebuild:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          python -m spacy download en_core_web_sm
+
+      - name: Rebuild index
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python -m scripts.index_catalog --rebuild

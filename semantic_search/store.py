@@ -11,7 +11,7 @@ The ``supabase`` package is imported lazily.
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterator, List, Optional
 
 from .types import Record
 
@@ -24,12 +24,17 @@ class SupabaseVectorStore:
         schema: Optional[str] = None,
         table: str = "products",
         search_fn: str = "search_products",
+        source_table: str = "products",
+        source_schema: str = "public",
     ):
         self.url = url or os.environ.get("SUPABASE_URL")
         self.key = key or os.environ.get("SUPABASE_KEY")
         self.schema = schema or os.environ.get("SUPABASE_SCHEMA", "semantic_search")
         self.table = table
         self.search_fn = search_fn
+        # The marketplace's own products table (read catalog, write tags back).
+        self.source_table = source_table
+        self.source_schema = source_schema
         self._client = None
         if not self.url or not self.key:
             raise RuntimeError(
@@ -71,3 +76,44 @@ class SupabaseVectorStore:
             {"query_embedding": query_embedding, "match_count": k},
         ).execute()
         return resp.data or []
+
+    # --- marketplace source table (public.products) -----------------------
+
+    def write_source_tags(self, external_id: str, tags: List[str]) -> None:
+        """Write generated tags back into the marketplace's products.tags column."""
+        (
+            self.client.schema(self.source_schema)
+            .table(self.source_table)
+            .update({"tags": tags})
+            .eq("id", external_id)
+            .execute()
+        )
+
+    def iter_source_products(
+        self,
+        only_active: bool = True,
+        since: Optional[str] = None,
+        batch: int = 500,
+    ) -> Iterator[Dict[str, Any]]:
+        """Yield products from the marketplace table for (re)indexing.
+
+        ``since`` (ISO timestamp) limits to rows changed after it — used for
+        incremental rebuilds. ``only_active`` skips inactive listings.
+        """
+        offset = 0
+        while True:
+            q = (
+                self.client.schema(self.source_schema)
+                .table(self.source_table)
+                .select("id,name,description,updated_at")
+            )
+            if only_active:
+                q = q.eq("is_active", True)
+            if since:
+                q = q.gte("updated_at", since)
+            rows = (q.range(offset, offset + batch - 1).execute().data) or []
+            for row in rows:
+                yield row
+            if len(rows) < batch:
+                break
+            offset += batch

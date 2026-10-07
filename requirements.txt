@@ -6,3 +6,5 @@ sentence-transformers>=2.7  # stage 5 — embeddings (loads BAAI/bge-m3)
 better_profanity>=0.7       # stage 7 — content filter
 supabase>=2.0        # stage 8 — pgvector store client
 numpy>=1.24          # cosine scoring in stage 6
+fastapi>=0.110       # HTTP microservice (api/main.py)
+uvicorn[standard]>=0.27  # ASGI server for the microservice
