@@ -61,13 +61,15 @@ create or replace function semantic_search.search_products(
     query_embedding vector(1024),
     match_count int
 )
-returns table (id bigint, name text, category text, tags text[], score float)
+returns table (external_id text, name text, category text, tags text[], score float)
 language sql
 stable
 security definer
-set search_path = semantic_search
+-- include public + extensions so the pgvector <=> operator resolves inside the
+-- security-definer sandbox (pgvector is installed in the extensions schema).
+set search_path = semantic_search, public, extensions
 as $$
-    select p.id, p.name, p.category, p.tags,
+    select p.external_id, p.name, p.category, p.tags,
            1 - (p.embedding <=> query_embedding) as score
     from semantic_search.products p
     order by p.embedding <=> query_embedding

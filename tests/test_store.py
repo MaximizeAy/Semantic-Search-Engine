@@ -36,8 +36,19 @@ class TestUpsert(unittest.TestCase):
         self.assertEqual(t.on_conflict, "external_id")
         self.assertEqual(set(t.payload), {
             "external_id", "name", "description", "category",
-            "discovered_categories", "tags", "embedding",
+            "discovered_categories", "tags", "embedding", "indexed_at",
         })
+        # embedding must be the pgvector string literal, not a JSON array
+        self.assertIsInstance(t.payload["embedding"], str)
+        self.assertTrue(t.payload["embedding"].startswith("[") and t.payload["embedding"].endswith("]"))
+        self.assertIsNotNone(t.payload["indexed_at"])
+
+    def test_none_embedding_stays_none(self):
+        store = make_store()
+        store._client = FakeSupabaseClient()
+        store.upsert({"external_id": "u1", "name": "N", "embedding": None})
+        t = tables(store._client)[0]
+        self.assertIsNone(t.payload["embedding"])
 
 
 class TestWriteSourceTags(unittest.TestCase):
@@ -83,7 +94,9 @@ class TestSearchRpc(unittest.TestCase):
         rpc = [c for c in store._client.calls if isinstance(c, tuple) and c[0] == "rpc"][0]
         self.assertEqual(rpc[1], "semantic_search")
         self.assertEqual(rpc[2], "search_products")
-        self.assertEqual(rpc[3], {"query_embedding": [0.1, 0.2], "match_count": 5})
+        # query vector sent as a pgvector string literal
+        self.assertEqual(rpc[3]["match_count"], 5)
+        self.assertEqual(rpc[3]["query_embedding"], "[0.1,0.2]")
 
 
 class TestConstructorGuards(unittest.TestCase):

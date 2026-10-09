@@ -14,12 +14,60 @@ the README). The embedder, pipeline, and store are built once and shared.
 
 from __future__ import annotations
 
+import logging
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from .embed import Embedder
 from .pipeline import build_search_pipeline, build_tag_pipeline
 from .store import SupabaseVectorStore
 from .types import Record
+
+logger = logging.getLogger(__name__)
+
+MAX_SOURCE_TAGS = 25
+
+
+def _parse_ts(value: Optional[str]) -> Optional[datetime]:
+    """Parse a Postgres/ISO timestamp string; None on failure."""
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def merge_tags(
+    current: List[str],
+    previous_generated: List[str],
+    generated: List[str],
+    cap: int = MAX_SOURCE_TAGS,
+) -> List[str]:
+    """Union seller tags with freshly generated ones (case-insensitive dedup).
+
+    Seller-set tags are preserved; tags we generated on a prior run that are no
+    longer generated are dropped (so the column does not accumulate stale tags);
+    new generated tags are appended. Order: kept tags first, then new ones.
+    """
+    prev = {t.casefold() for t in previous_generated}
+    gen = {t.casefold() for t in generated}
+    result: List[str] = []
+    seen: set[str] = set()
+    for t in current:
+        c = t.casefold()
+        if c in seen:
+            continue
+        if c in prev and c not in gen:
+            continue  # stale: we added it before, no longer generated
+        result.append(t)
+        seen.add(c)
+    for t in generated:
+        c = t.casefold()
+        if c not in seen:
+            result.append(t)
+            seen.add(c)
+    return result[:cap]
 
 
 class TaggingService:
@@ -49,11 +97,32 @@ class TaggingService:
         back to the marketplace's products.tags.
         """
         record = self.pipeline.run_text(name, description, external_id)
-        if persist:
+
+        # Persistence requires an external_id to link back to the product and to
+        # avoid piling up NULL-keyed rows in the index.
+        if persist and external_id:
+            # read our previously-generated tags BEFORE the upsert overwrites them
+            previous = (self.store.get_indexed(external_id) or {}).get("tags") or []
             self.store.upsert(record)
-            if write_source_tags and external_id:
-                self.store.write_source_tags(external_id, record["tags"])
+            if write_source_tags:
+                self._merge_and_write_tags(external_id, record["tags"], previous)
         return record
+
+    def _merge_and_write_tags(
+        self, external_id: str, generated: List[str], previous: List[str]
+    ) -> None:
+        """Union generated tags with the product's existing tags and write back."""
+        current = self.store.get_source_tags(external_id)
+        merged = merge_tags(current, previous, generated)
+        if merged == current:
+            return  # no change — skip the write (and avoid churn)
+        updated = self.store.write_source_tags(external_id, merged)
+        if updated == 0:
+            logger.warning(
+                "tag write matched no product row (external_id=%s); "
+                "was it tagged before the product existed?",
+                external_id,
+            )
 
     # --- flow 2: realtime search ----------------------------------------
     def search(self, query: str, k: int = 10) -> List[Dict[str, Any]]:
@@ -71,8 +140,15 @@ class TaggingService:
         ``since`` (ISO timestamp) does an incremental rebuild of recently
         changed products; omit it for a full rebuild.
         """
+        # Skip products already indexed since their last real change, so our own
+        # tag-writes (which may bump updated_at) don't cause re-processing churn.
+        indexed = self.store.indexed_map()
         count = 0
         for row in self.store.iter_source_products(only_active=only_active, since=since):
+            updated_at = _parse_ts(row.get("updated_at"))
+            indexed_at = _parse_ts(indexed.get(row["id"]))
+            if indexed_at and updated_at and indexed_at >= updated_at:
+                continue
             self.tag_product(
                 row["name"],
                 row.get("description") or "",

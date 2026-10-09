@@ -110,16 +110,30 @@ class FakeSearchPipeline:
 
 
 class FakeStore:
-    def __init__(self, source_rows=None):
+    def __init__(self, source_rows=None, indexed=None, source_tags=None, indexed_at_map=None):
         self.upserts: List[dict] = []
         self.tag_writes: List[tuple] = []
         self._source_rows = source_rows or []
+        self._indexed = indexed or {}            # external_id -> {"tags", "indexed_at"}
+        self._source_tags = source_tags or {}    # external_id -> [tags]
+        self._indexed_at_map = indexed_at_map or {}
+        self.write_result = 1                    # rows "updated" by write_source_tags
 
     def upsert(self, record):
         self.upserts.append(record)
 
+    def get_indexed(self, external_id):
+        return self._indexed.get(external_id)
+
+    def indexed_map(self):
+        return dict(self._indexed_at_map)
+
+    def get_source_tags(self, external_id):
+        return list(self._source_tags.get(external_id, []))
+
     def write_source_tags(self, external_id, tags):
         self.tag_writes.append((external_id, tags))
+        return self.write_result
 
     def iter_source_products(self, only_active=True, since=None, batch=500):
         for row in self._source_rows:
@@ -157,6 +171,10 @@ class _FakeTable:
     def select(self, cols):
         self.op = "select"
         self.payload = cols
+        return self
+
+    def limit(self, n):
+        self._limit = n
         return self
 
     def eq(self, col, val):

@@ -78,8 +78,12 @@ The engine runs as an HTTP microservice (`api/main.py`) with two flows:
 
 1. **Tag on create** — `POST /tag` when a product/service is created: generates
    tags + category + embedding, upserts the embedding into
-   `semantic_search.products`, and writes tags back to `public.products.tags`.
-2. **Realtime search** — `POST /search`: typo-tolerant semantic search over the index.
+   `semantic_search.products`, and **merges** the generated tags into
+   `public.products.tags` (seller-set tags are preserved; previously-generated
+   tags that are no longer produced are dropped). Requires an `external_id`.
+2. **Realtime search** — `POST /search`: typo-tolerant semantic search over the
+   index; results carry the product's `external_id` so you can link back to
+   `public.products`.
 
 ```bash
 uvicorn api.main:app --host 0.0.0.0 --port 8000
@@ -105,6 +109,10 @@ embedding happens).
 python -m scripts.index_catalog --rebuild            # full rebuild
 python -m scripts.index_catalog --since 2026-10-01T00:00:00Z   # incremental
 ```
+
+Rebuilds are **incremental**: a product is skipped when its index entry
+(`semantic_search.products.indexed_at`) is newer than the product's
+`updated_at`, so the engine's own tag-writes don't cause re-processing churn.
 
 A scheduled **GitHub Action** (`.github/workflows/weekly-rebuild.yml`) runs it
 weekly (needs `SUPABASE_URL` / `SUPABASE_KEY` repo secrets; active once merged to
