@@ -124,6 +124,18 @@ class TaggingService:
                 external_id,
             )
 
+    def tag_by_id(self, external_id: str) -> Optional[Record]:
+        """Fetch a marketplace product by id and tag it (dispatch entry point)."""
+        product = self.store.get_source_product(external_id)
+        if not product:
+            logger.warning("no product found for external_id=%s; nothing tagged", external_id)
+            return None
+        return self.tag_product(
+            product["name"],
+            product.get("description") or "",
+            external_id=external_id,
+        )
+
     # --- flow 2: realtime search ----------------------------------------
     def search(self, query: str, k: int = 10) -> List[Dict[str, Any]]:
         return self.search_pipeline.search(query, k)

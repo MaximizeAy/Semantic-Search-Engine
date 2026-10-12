@@ -133,6 +133,19 @@ class SupabaseVectorStore:
 
     # --- marketplace source table (public.products) -----------------------
 
+    def get_source_product(self, external_id: str) -> Optional[Dict[str, Any]]:
+        """Fetch one marketplace product's {id, name, description} by id."""
+        rows = (
+            self.client.schema(self.source_schema)
+            .table(self.source_table)
+            .select("id,name,description")
+            .eq("id", external_id)
+            .limit(1)
+            .execute()
+            .data
+        ) or []
+        return rows[0] if rows else None
+
     def get_source_tags(self, external_id: str) -> List[str]:
         """Current tags on the marketplace product row (seller-set + prior)."""
         rows = (

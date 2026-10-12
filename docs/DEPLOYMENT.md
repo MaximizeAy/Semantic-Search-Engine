@@ -92,6 +92,49 @@ lives on Cloudflare.
 | 2 | `Dockerfile` + start command + minimal proxy Worker + deploy notes |
 | 3 | `Dockerfile` + `wrangler.toml` (container binding) + deploy notes |
 
+## Chosen path: $0 (Option 1, on-create dispatch) — BUILT
+
+Decided and implemented. No always-on server; everything on free tiers.
+
+```
+SEARCH (real-time)                      TAGGING (on product-create)
+──────────────────                      ───────────────────────────
+Cloudflare Worker (free plan)           GitHub Actions (free for public repo)
+  normalize (JS)                          repository_dispatch "product-created"
+  embed → Workers AI bge-m3                 { external_id }
+  Supabase search_products RPC             runs scripts/tag_one.py
+  (anon key, security-definer)             embed → Workers AI bge-m3 (REST)
+                                           upsert index + merge tags back
+```
+
+**Cost:** Workers (100k req/day free) + Workers AI (10k neurons/day free) +
+GitHub Actions (free, public repo) + Supabase (existing free tier) = **$0** at
+low volume. No Cloudflare Containers → no $5 Workers-Paid floor.
+
+**What was built:**
+- `semantic_search/embed.py` — `EMBEDDING_BACKEND=workers_ai` backend (REST, no
+  torch), L2-normalized to match the sentence-transformers path.
+- `workers/search/` — the search Worker (`wrangler.toml` + `src/index.js`), uses
+  the **anon** key via the security-definer RPC.
+- `.github/workflows/tag-on-create.yml` — `repository_dispatch` job running
+  `scripts/tag_one.py` with `requirements-tagging.txt` (light, no torch).
+- `scripts/tag_one.py` + `service.tag_by_id()` + `store.get_source_product()`.
+
+**Setup (when going live):**
+1. Deploy the Worker: `cd workers/search && wrangler secret put SUPABASE_URL` /
+   `SUPABASE_KEY` (anon) → `wrangler deploy`.
+2. Repo secrets for the Action: `SUPABASE_URL`, `SUPABASE_KEY` (service-role),
+   `CF_ACCOUNT_ID`, `CF_AI_TOKEN`. Merge to `main` so dispatch is active.
+3. From the marketplace backend (or a Supabase DB webhook) on product-create,
+   POST a `repository_dispatch` of type `product-created` with
+   `client_payload: { external_id }`.
+4. Backfill once: `EMBEDDING_BACKEND=workers_ai python -m scripts.index_catalog`
+   (spread over days if it would exceed 10k neurons/day).
+
+**Key-safety:** Worker uses the **anon** key (search via security-definer RPC);
+the Action uses the **service-role** key (writes). Never ship service-role to
+the Worker.
+
 ## Open sub-decisions (for Option 1)
 - Confirm Workers AI `bge-m3` output is L2-normalized / matches our indexing vectors
   (one quick empirical check before committing the catalog).

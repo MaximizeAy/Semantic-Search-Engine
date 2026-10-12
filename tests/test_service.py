@@ -69,6 +69,22 @@ class TestTagProduct(unittest.TestCase):
         self.assertEqual(store.tag_writes, [])
 
 
+class TestTagById(unittest.TestCase):
+    def test_fetches_product_then_tags(self):
+        store = FakeStore(source_products={"uuid-1": {"id": "uuid-1", "name": "Earbuds", "description": "bt"}})
+        svc = make_service(store)
+        rec = svc.tag_by_id("uuid-1")
+        self.assertIsNotNone(rec)
+        self.assertEqual(svc.pipeline.calls[0][0], "Earbuds")   # name passed to pipeline
+        self.assertEqual(len(store.upserts), 1)
+
+    def test_missing_product_returns_none(self):
+        store = FakeStore()
+        svc = make_service(store)
+        self.assertIsNone(svc.tag_by_id("nope"))
+        self.assertEqual(store.upserts, [])
+
+
 class TestSearch(unittest.TestCase):
     def test_delegates_to_search_pipeline(self):
         svc = make_service(FakeStore())

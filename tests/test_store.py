@@ -85,6 +85,22 @@ class TestIterSourceProducts(unittest.TestCase):
         self.assertFalse(any(f[0] == "eq" and f[1] == "is_active" for f in t.filters))
 
 
+class TestGetSourceProduct(unittest.TestCase):
+    def test_returns_first_matching_row(self):
+        store = make_store()
+        store._client = FakeSupabaseClient(source_rows=[{"id": "u1", "name": "A", "description": "d"}])
+        out = store.get_source_product("u1")
+        self.assertEqual(out["name"], "A")
+        t = tables(store._client)[0]
+        self.assertEqual(t.parent.name, "public")
+        self.assertIn(("eq", "id", "u1"), t.filters)
+
+    def test_none_when_absent(self):
+        store = make_store()
+        store._client = FakeSupabaseClient(source_rows=[])
+        self.assertIsNone(store.get_source_product("u1"))
+
+
 class TestSearchRpc(unittest.TestCase):
     def test_search_calls_rpc_in_engine_schema(self):
         store = make_store()

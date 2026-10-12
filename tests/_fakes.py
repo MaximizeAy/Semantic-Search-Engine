@@ -110,17 +110,22 @@ class FakeSearchPipeline:
 
 
 class FakeStore:
-    def __init__(self, source_rows=None, indexed=None, source_tags=None, indexed_at_map=None):
+    def __init__(self, source_rows=None, indexed=None, source_tags=None,
+                 indexed_at_map=None, source_products=None):
         self.upserts: List[dict] = []
         self.tag_writes: List[tuple] = []
         self._source_rows = source_rows or []
         self._indexed = indexed or {}            # external_id -> {"tags", "indexed_at"}
         self._source_tags = source_tags or {}    # external_id -> [tags]
         self._indexed_at_map = indexed_at_map or {}
+        self._source_products = source_products or {}  # external_id -> {name, description}
         self.write_result = 1                    # rows "updated" by write_source_tags
 
     def upsert(self, record):
         self.upserts.append(record)
+
+    def get_source_product(self, external_id):
+        return self._source_products.get(external_id)
 
     def get_indexed(self, external_id):
         return self._indexed.get(external_id)
