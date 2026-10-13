@@ -86,12 +86,19 @@ class ClassifyStage:
         # Preserve discovered terms as secondary (slang/local) categories.
         record["discovered_categories"] = list(record.get("discovered_tags", []))
 
-        # Score canonical tags by relevance to the product embedding.
-        tags: List[str] = record.get("tags", [])
-        if tags:
-            tag_vectors = self.embedder.encode(tags)
+        # Tags = the best candidate terms OVERALL (canonical matches + discovered
+        # product-specific terms), ranked by relevance to the product. The small
+        # controlled vocabulary canonicalizes typos but no longer gatekeeps which
+        # terms can be tags. Stage 7 then filters, thresholds and caps.
+        pool: List[str] = list(
+            dict.fromkeys(
+                list(record.get("tags", [])) + list(record.get("discovered_tags", []))
+            )
+        )
+        if pool:
+            vectors = self.embedder.encode(pool)
             scored = sorted(
-                ((t, _cosine(emb, tv)) for t, tv in zip(tags, tag_vectors)),
+                ((t, _cosine(emb, tv)) for t, tv in zip(pool, vectors)),
                 key=lambda kv: kv[1],
                 reverse=True,
             )

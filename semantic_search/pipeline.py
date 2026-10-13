@@ -98,7 +98,9 @@ def build_tag_pipeline(
             NormalizeStage(),
             LinguisticsStage(),
             CandidateStage(KeywordCandidates()),
-            FuzzyStage(canonicalizer),
+            # learn_discovered off: don't mutate the canonicalization vocabulary
+            # mid-run (it would let one product's terms canonicalize the next).
+            FuzzyStage(canonicalizer, learn_discovered=False),
             EmbedStage(embedder),
             ClassifyStage(categorizer, embedder),
             FilterStage(content_filter or ContentFilter()),

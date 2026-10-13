@@ -70,7 +70,10 @@ class TestFuzzy(unittest.TestCase):
     def test_corrects_typo_to_vocabulary(self):
         from semantic_search.fuzzy import FuzzyCanonicalizer, TagVocabulary
 
-        canon = FuzzyCanonicalizer(TagVocabulary.from_taxonomy(["wireless", "bluetooth"]))
+        # explicit threshold so the test is decoupled from the default
+        canon = FuzzyCanonicalizer(
+            TagVocabulary.from_taxonomy(["wireless", "bluetooth"]), threshold=80.0
+        )
         self.assertEqual(canon.correct_query("wireles"), "wireless")
         self.assertEqual(canon.correct_query("blutooth"), "bluetooth")
 

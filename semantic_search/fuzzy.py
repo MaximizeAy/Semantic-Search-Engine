@@ -49,7 +49,7 @@ class TagVocabulary:
 
 
 class FuzzyCanonicalizer:
-    def __init__(self, vocabulary: TagVocabulary, threshold: float = 85.0):
+    def __init__(self, vocabulary: TagVocabulary, threshold: float = 90.0):
         self.vocabulary = vocabulary
         self.threshold = threshold
 
