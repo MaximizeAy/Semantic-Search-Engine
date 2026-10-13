@@ -24,6 +24,7 @@ from semantic_search.service import TaggingService
 def main() -> None:
     parser = argparse.ArgumentParser(description="Index / rebuild the catalog.")
     parser.add_argument("--rebuild", action="store_true", help="full rebuild (default behaviour)")
+    parser.add_argument("--force", action="store_true", help="re-process even products already indexed since their last change (use after a code change)")
     parser.add_argument("--since", default=None, help="ISO timestamp; only reindex products changed after it")
     parser.add_argument("--all", action="store_true", help="include inactive listings")
     parser.add_argument("--no-source-tags", action="store_true", help="do not write tags back to public.products")
@@ -35,6 +36,7 @@ def main() -> None:
         only_active=not args.all,
         since=args.since,
         write_source_tags=not args.no_source_tags,
+        force=args.force,
     )
     elapsed = time.time() - started
     scope = f"since {args.since}" if args.since else "full catalog"

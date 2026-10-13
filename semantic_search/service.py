@@ -146,21 +146,23 @@ class TaggingService:
         only_active: bool = True,
         since: Optional[str] = None,
         write_source_tags: bool = True,
+        force: bool = False,
     ) -> int:
         """Re-tag + re-index catalog products. Returns how many were processed.
 
-        ``since`` (ISO timestamp) does an incremental rebuild of recently
-        changed products; omit it for a full rebuild.
+        By default products already indexed since their last change are skipped
+        (so scheduled runs don't re-process unchanged listings or churn on our
+        own tag-writes). ``force=True`` ignores that and re-processes everything
+        — use it after a code change. ``since`` limits to recently changed rows.
         """
-        # Skip products already indexed since their last real change, so our own
-        # tag-writes (which may bump updated_at) don't cause re-processing churn.
-        indexed = self.store.indexed_map()
+        indexed = {} if force else self.store.indexed_map()
         count = 0
         for row in self.store.iter_source_products(only_active=only_active, since=since):
-            updated_at = _parse_ts(row.get("updated_at"))
-            indexed_at = _parse_ts(indexed.get(row["id"]))
-            if indexed_at and updated_at and indexed_at >= updated_at:
-                continue
+            if not force:
+                updated_at = _parse_ts(row.get("updated_at"))
+                indexed_at = _parse_ts(indexed.get(row["id"]))
+                if indexed_at and updated_at and indexed_at >= updated_at:
+                    continue
             self.tag_product(
                 row["name"],
                 row.get("description") or "",

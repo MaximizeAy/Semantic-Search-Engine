@@ -123,6 +123,19 @@ class TestRebuild(unittest.TestCase):
         self.assertEqual(n, 1)
         self.assertEqual([w[0] for w in store.tag_writes], ["u2"])
 
+    def test_force_reprocesses_everything(self):
+        rows = [
+            {"id": "u1", "name": "A", "updated_at": "2026-10-01T00:00:00+00:00"},
+            {"id": "u2", "name": "B", "updated_at": "2026-10-05T00:00:00+00:00"},
+        ]
+        store = FakeStore(
+            source_rows=rows,
+            indexed_at_map={"u1": "2026-10-20T00:00:00+00:00", "u2": "2026-10-20T00:00:00+00:00"},
+        )
+        svc = make_service(store)
+        n = svc.rebuild(force=True)   # ignore indexed_at
+        self.assertEqual(n, 2)
+
 
 class TestMergeTags(unittest.TestCase):
     def test_union_dedup_casefold(self):
