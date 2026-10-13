@@ -123,13 +123,23 @@ low volume. No Cloudflare Containers → no $5 Workers-Paid floor.
 **Setup (when going live):**
 1. Deploy the Worker: `cd workers/search && wrangler secret put SUPABASE_URL` /
    `SUPABASE_KEY` (anon) → `wrangler deploy`.
-2. Repo secrets for the Action: `SUPABASE_URL`, `SUPABASE_KEY` (service-role),
-   `CF_ACCOUNT_ID`, `CF_AI_TOKEN`. Merge to `main` so dispatch is active.
-3. From the marketplace backend (or a Supabase DB webhook) on product-create,
-   POST a `repository_dispatch` of type `product-created` with
-   `client_payload: { external_id }`.
-4. Backfill once: `EMBEDDING_BACKEND=workers_ai python -m scripts.index_catalog`
-   (spread over days if it would exceed 10k neurons/day).
+2. Repo secrets for the Actions: `SUPABASE_URL`, `SUPABASE_KEY` (service-role),
+   `CF_ACCOUNT_ID`, `CF_AI_TOKEN`. Merge to `main` so `repository_dispatch` and
+   the weekly rebuild are active (both only run on the default branch).
+3. Wire on-create dispatch: run `db/dispatch_trigger.sql` in Supabase and store a
+   GitHub token in Vault
+   (`select vault.create_secret('<token>', 'github_dispatch_token');`). Inserting
+   a product then fires a `product-created` dispatch automatically.
+   *(Alternatively, your backend can POST the `repository_dispatch` itself.)*
+4. Backfill once (disable the trigger first to avoid one Action run per row):
+   run the **Weekly catalog rebuild** workflow manually (Actions tab →
+   *Run workflow*), or `EMBEDDING_BACKEND=workers_ai python -m
+   scripts.index_catalog` locally. Spread over days if it would exceed the
+   10k-neuron/day free allowance.
+
+Both GitHub Actions (tag-on-create and weekly rebuild) use the **Workers AI**
+embedding backend and the light `requirements-tagging.txt` (no torch), matching
+the Worker's vector space.
 
 **Key-safety:** Worker uses the **anon** key (search via security-definer RPC);
 the Action uses the **service-role** key (writes). Never ship service-role to

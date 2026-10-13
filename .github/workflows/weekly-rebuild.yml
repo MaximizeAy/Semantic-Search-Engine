@@ -1,18 +1,20 @@
 name: Weekly catalog rebuild
 
 # Re-tags and re-indexes the catalog once a week so tags/embeddings stay fresh
-# as the discovered vocabulary grows and listings change.
+# as the discovered vocabulary grows and listings change. Incremental: products
+# already indexed since their last change are skipped.
+#
+# Uses the SAME embedding path as search (Cloudflare Workers AI bge-m3) so
+# vectors stay in one space, and installs the light deps (no torch).
 #
 # NOTE: scheduled workflows run only on the repository's DEFAULT branch, so this
-# does nothing until merged to main. It also needs two repo secrets:
-#   SUPABASE_URL, SUPABASE_KEY  (service-role key)
-# Runs on CPU here (no GPU) — fine for small/medium catalogs; move to a GPU host
-# if the catalog grows large.
+# does nothing until merged to main. Needs repo secrets:
+#   SUPABASE_URL, SUPABASE_KEY (service-role), CF_ACCOUNT_ID, CF_AI_TOKEN
 
 on:
   schedule:
     - cron: "0 3 * * 1"   # Mondays 03:00 UTC
-  workflow_dispatch:       # allow manual runs from the Actions tab
+  workflow_dispatch:       # manual runs / initial backfill from the Actions tab
 
 jobs:
   rebuild:
@@ -26,13 +28,16 @@ jobs:
           python-version: "3.11"
           cache: pip
 
-      - name: Install dependencies
+      - name: Install (light) dependencies
         run: |
-          pip install -r requirements.txt
+          pip install -r requirements-tagging.txt
           python -m spacy download en_core_web_sm
 
       - name: Rebuild index
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          EMBEDDING_BACKEND: workers_ai
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          CF_AI_TOKEN: ${{ secrets.CF_AI_TOKEN }}
         run: python -m scripts.index_catalog --rebuild
