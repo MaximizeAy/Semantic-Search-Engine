@@ -139,3 +139,7 @@ and run in CI (`.github/workflows/tests.yml`), skipping cleanly where absent.
 Pipeline runs end-to-end (validated on Kaggle GPU). Service + weekly rebuild in
 place; test suite green. See `docs/PIPELINE.md` §9 for the roadmap and §10 for
 open decisions.
+
+## License
+
+[MIT](LICENSE) © MaximizeAy
