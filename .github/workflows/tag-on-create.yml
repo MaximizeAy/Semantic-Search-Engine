@@ -1,0 +1,52 @@
+name: Tag on create
+
+# Near-real-time tagging via dispatch. Trigger from your marketplace backend (or
+# a Supabase DB webhook) with a repository_dispatch of type "product-created" and
+# client_payload { "external_id": "<uuid>" }. Also runnable manually.
+#
+# $0: runs on GitHub Actions (free for public repos); embedding via Cloudflare
+# Workers AI (no torch). Needs repo secrets:
+#   SUPABASE_URL, SUPABASE_KEY (service-role), CF_ACCOUNT_ID, CF_AI_TOKEN
+#
+# NOTE: repository_dispatch only fires on the default branch, so this is active
+# once merged to main.
+
+on:
+  repository_dispatch:
+    types: [product-created]
+  workflow_dispatch:
+    inputs:
+      external_id:
+        description: "public.products.id (uuid) to tag"
+        required: true
+
+concurrency:
+  group: tag-${{ github.event.client_payload.external_id || github.event.inputs.external_id }}
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install (light) dependencies
+        run: |
+          pip install -r requirements-tagging.txt
+          python -m spacy download en_core_web_sm
+
+      - name: Tag the product
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          EMBEDDING_BACKEND: workers_ai
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          CF_AI_TOKEN: ${{ secrets.CF_AI_TOKEN }}
+        run: |
+          python -m scripts.tag_one --external-id "${{ github.event.client_payload.external_id || github.event.inputs.external_id }}"
