@@ -36,14 +36,26 @@ class LinguisticExtractor:
                 ) from exc
         return self._nlp
 
+    @staticmethod
+    def _span_term(span) -> str:
+        """Trim leading/trailing stopwords and punctuation off a span."""
+        toks = list(span)
+        while toks and (toks[0].is_stop or toks[0].is_punct or toks[0].is_space):
+            toks = toks[1:]
+        while toks and (toks[-1].is_stop or toks[-1].is_punct or toks[-1].is_space):
+            toks = toks[:-1]
+        return " ".join(t.text for t in toks).strip().lower()
+
     def candidates(self, text: str) -> List[str]:
-        """Return deduplicated noun-chunk + entity spans as candidate terms."""
+        """Return deduplicated, cleaned noun-chunk + entity spans as candidates."""
+        from .text_utils import is_valid_term
+
         doc = self.nlp(text)
         seen = set()
         out: List[str] = []
         for span in list(doc.noun_chunks) + list(doc.ents):
-            term = span.text.strip().lower()
-            if term and term not in seen:
+            term = self._span_term(span)
+            if term and term not in seen and is_valid_term(term):
                 seen.add(term)
                 out.append(term)
         return out

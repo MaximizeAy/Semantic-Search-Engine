@@ -29,6 +29,30 @@ class TestTextNormalizer(unittest.TestCase):
         n = TextNormalizer(normalize_case=False)
         self.assertEqual(n.normalize("ABC"), "ABC")
 
+    def test_strips_html_tags_and_entities(self):
+        out = self.n.normalize("<p>Wireless <strong>Earbuds</strong></p> &amp; case")
+        self.assertEqual(out, "wireless earbuds & case")
+        self.assertNotIn("strong", out)
+        self.assertNotIn("<", out)
+
+    def test_strips_urls_and_base64(self):
+        out = self.n.normalize(
+            'Sneaker <img src="https://x.com/AAAAAAAAAAAAAAAAAAAAAAAAAAAA.png"> noir'
+        )
+        self.assertNotIn("http", out)
+        self.assertNotIn("img", out)
+        self.assertIn("sneaker", out)
+        self.assertIn("noir", out)
+
+    def test_strips_escaped_markup(self):
+        out = self.n.normalize("Shoe &lt;script&gt;bad()&lt;/script&gt; leather")
+        self.assertNotIn("script", out)
+        self.assertIn("leather", out)
+
+    def test_html_strip_can_be_disabled(self):
+        n = TextNormalizer(strip_html=False)
+        self.assertIn("<p>", n.normalize("<p>x</p>"))
+
 
 class TestNormalizeStage(unittest.TestCase):
     def test_combined_text_and_fields(self):

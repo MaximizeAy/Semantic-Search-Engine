@@ -9,10 +9,16 @@ the offline indexing path and the online query path.
 
 from __future__ import annotations
 
+import html
 import re
 import unicodedata
 
 from .types import Record
+
+_SCRIPT_STYLE = re.compile(r"(?is)<(script|style)[^>]*>.*?</\1>")
+_TAG = re.compile(r"<[^>]+>")
+_URL = re.compile(r"https?://\S+|data:\S+")
+_BASE64ISH = re.compile(r"\b[A-Za-z0-9+/]{24,}={0,2}\b")
 
 
 class TextNormalizer:
@@ -21,15 +27,28 @@ class TextNormalizer:
         unicode_normalize: bool = True,
         strip_whitespace: bool = True,
         normalize_case: bool = True,
+        strip_html: bool = True,
     ):
         self.unicode_normalize = unicode_normalize
         self.strip_whitespace = strip_whitespace
         self.normalize_case = normalize_case
+        self.strip_html = strip_html
         self.whitespace_pattern = re.compile(r"[\s​-‍﻿  ]+")
+
+    def _clean_html(self, text: str) -> str:
+        # unescape first so escaped markup (&lt;img&gt;) is stripped too
+        text = html.unescape(text)
+        text = _SCRIPT_STYLE.sub(" ", text)
+        text = _TAG.sub(" ", text)
+        text = _URL.sub(" ", text)
+        text = _BASE64ISH.sub(" ", text)
+        return text
 
     def normalize(self, text: str) -> str:
         if not isinstance(text, str):
             text = str(text)  # Convert non string into string
+        if self.strip_html:
+            text = self._clean_html(text)
         if self.unicode_normalize:
             text = unicodedata.normalize("NFKC", text)
         if self.strip_whitespace:

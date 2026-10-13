@@ -52,6 +52,8 @@ class CandidateStage:
         text = record.get("text") or ""
         scored = self.keyworder.score(text)
 
+        from .text_utils import is_valid_term
+
         merged: Dict[str, float] = {}
         # existing (linguistics) candidates first
         for c in record["candidates"]:
@@ -63,5 +65,6 @@ class CandidateStage:
         record["candidates"] = [
             {"term": t, "score": s}
             for t, s in sorted(merged.items(), key=lambda kv: kv[1], reverse=True)
+            if is_valid_term(t)
         ]
         return record

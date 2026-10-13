@@ -59,11 +59,15 @@ class ContentFilter:
         return kept
 
     def apply(self, tags: List[str], scores: Optional[dict] = None) -> List[str]:
+        from .text_utils import is_valid_term
+
         scores = scores or {}
         out = [
             t
             for t in tags
-            if not self._blocked(t) and scores.get(t, 1.0) >= self.min_score
+            if is_valid_term(t)
+            and not self._blocked(t)
+            and scores.get(t, 1.0) >= self.min_score
         ]
         out = self._dedupe(out)
         return out[: self.max_tags]
