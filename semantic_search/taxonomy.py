@@ -1,46 +1,67 @@
 """Seed taxonomy and starter vocabulary.
 
-- ``CATEGORIES`` — the 21 top-level categories of the Google Product Taxonomy,
-  used as the fixed label set for zero-shot classification (stage 6).
+- ``CATEGORIES`` — the marketplace's category slugs, the fixed label set for
+  zero-shot classification (stage 6). ``other`` is the fallback for products
+  that don't clearly fit, not a classified label.
+- ``CATEGORY_LABELS`` — a readable phrase per slug used for the embedding
+  comparison (slugs like ``health-beauty`` embed poorly; phrases don't). The
+  stored value is always the slug.
 - ``STARTER_TAGS`` — a curated starter tag vocabulary (materials, features,
   product types, colors, descriptors) so the fuzzy stage (stage 4) has an anchor
   on first run. Data-discovered terms are added to this at index time.
 
-Both are intended as a backbone, not a final list. Grow them from your own
-catalog (see docs/PIPELINE.md §3-4).
+Grow them from your own catalog (see docs/PIPELINE.md §3-4).
 """
 
 from __future__ import annotations
 
-from typing import List
+from typing import List, Tuple
 
 from .fuzzy import TagVocabulary
 
-# Google Product Taxonomy — top level (21 categories).
-# Source: https://www.google.com/basepages/producttype/taxonomy-with-ids.en-US.txt
+# Marketplace category slugs. 'other' is the catch-all fallback.
 CATEGORIES: List[str] = [
-    "Animals & Pet Supplies",
-    "Apparel & Accessories",
-    "Arts & Entertainment",
-    "Baby & Toddler",
-    "Business & Industrial",
-    "Cameras & Optics",
-    "Electronics",
-    "Food, Beverages & Tobacco",
-    "Furniture",
-    "Hardware",
-    "Health & Beauty",
-    "Home & Garden",
-    "Luggage & Bags",
-    "Mature",
-    "Media",
-    "Office Supplies",
-    "Religious & Ceremonial",
-    "Software",
-    "Sporting Goods",
-    "Toys & Games",
-    "Vehicles & Parts",
+    "accessories",
+    "automotive",
+    "baby-products",
+    "computing",
+    "electronics",
+    "fashion",
+    "footwear",
+    "groceries",
+    "health-beauty",
+    "home-office",
+    "phones-tablets",
+    "sporting-goods",
+    "other",
 ]
+
+FALLBACK_CATEGORY = "other"
+
+# Default similarity below which a product falls back to FALLBACK_CATEGORY.
+# Tune on real data: inspect scores after indexing and adjust.
+DEFAULT_CATEGORY_THRESHOLD = 0.25
+
+# Readable label per slug for the embedding comparison (excludes the fallback).
+CATEGORY_LABELS = {
+    "accessories": "Accessories",
+    "automotive": "Automotive, car and vehicle parts",
+    "baby-products": "Baby and toddler products",
+    "computing": "Computing, laptops and PCs",
+    "electronics": "Electronics and gadgets",
+    "fashion": "Fashion, clothing and apparel",
+    "footwear": "Footwear, shoes and sneakers",
+    "groceries": "Groceries, food and drinks",
+    "health-beauty": "Health, beauty and personal care",
+    "home-office": "Home, office and furniture",
+    "phones-tablets": "Phones, tablets and mobile devices",
+    "sporting-goods": "Sporting goods and fitness",
+}
+
+
+def classification_labels() -> List[Tuple[str, str]]:
+    """(slug, label) pairs to classify against — excludes the fallback."""
+    return [(slug, CATEGORY_LABELS[slug]) for slug in CATEGORIES if slug in CATEGORY_LABELS]
 
 # Curated starter tags — common e-commerce descriptors across categories.
 STARTER_TAGS: List[str] = [

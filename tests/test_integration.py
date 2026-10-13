@@ -43,6 +43,27 @@ class TestClassify(unittest.TestCase):
         with self.assertRaises(ValueError):
             stage.process(new_record("x"))  # no embedding set
 
+    def test_slug_returned_and_fallback_below_threshold(self):
+        from semantic_search.classify import ZeroShotCategorizer
+
+        emb = FakeEmbedder(vectors={
+            "Electronics and gadgets": [1.0, 0.0, 0.0],
+            "Footwear and shoes": [0.0, 1.0, 0.0],
+        })
+        cat = ZeroShotCategorizer(
+            emb,
+            labels=["Electronics and gadgets", "Footwear and shoes"],
+            slugs=["electronics", "footwear"],
+            threshold=0.5,
+            fallback="other",
+        )
+        # strongly electronics -> slug 'electronics'
+        slug, _ = cat.classify([0.99, 0.01, 0.0])
+        self.assertEqual(slug, "electronics")
+        # orthogonal to every label (low similarity) -> 'other'
+        slug2, _ = cat.classify([0.0, 0.0, 1.0])
+        self.assertEqual(slug2, "other")
+
 
 @unittest.skipUnless(has("rapidfuzz"), "rapidfuzz not installed")
 class TestFuzzy(unittest.TestCase):

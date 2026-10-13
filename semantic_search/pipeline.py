@@ -76,10 +76,23 @@ def build_tag_pipeline(
     from . import taxonomy  # lazy to avoid import cost when custom values are passed
 
     vocabulary = vocabulary if vocabulary is not None else taxonomy.build_vocabulary()
-    categories = categories if categories is not None else taxonomy.default_categories()
     embedder = embedder or Embedder()
     canonicalizer = FuzzyCanonicalizer(vocabulary)
-    categorizer = ZeroShotCategorizer(embedder, categories)
+
+    if categories is None:
+        # Default: marketplace slugs classified via readable labels, with an
+        # 'other' fallback when nothing clears the confidence threshold.
+        pairs = taxonomy.classification_labels()
+        categorizer = ZeroShotCategorizer(
+            embedder,
+            labels=[label for _, label in pairs],
+            slugs=[slug for slug, _ in pairs],
+            threshold=taxonomy.DEFAULT_CATEGORY_THRESHOLD,
+            fallback=taxonomy.FALLBACK_CATEGORY,
+        )
+    else:
+        # Caller supplied an explicit label set (used as both label and value).
+        categorizer = ZeroShotCategorizer(embedder, list(categories))
     return TagPipeline(
         [
             NormalizeStage(),

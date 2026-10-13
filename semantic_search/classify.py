@@ -12,7 +12,7 @@ and cap.
 
 from __future__ import annotations
 
-from typing import List, Sequence
+from typing import List, Optional, Sequence
 
 from .embed import Embedder
 from .types import Record
@@ -28,9 +28,27 @@ def _cosine(a, b):
 
 
 class ZeroShotCategorizer:
-    def __init__(self, embedder: Embedder, labels: Sequence[str]):
+    """Assign a category by nearest label embedding.
+
+    ``labels`` are the readable phrases that get embedded; ``slugs`` are the
+    values actually returned (default: the labels themselves). If the best
+    similarity is below ``threshold`` and a ``fallback`` is set, the fallback is
+    returned instead of forcing a weak match.
+    """
+
+    def __init__(
+        self,
+        embedder: Embedder,
+        labels: Sequence[str],
+        slugs: Optional[Sequence[str]] = None,
+        threshold: float = 0.0,
+        fallback: Optional[str] = None,
+    ):
         self.embedder = embedder
         self.labels = list(labels)
+        self.slugs = list(slugs) if slugs is not None else list(labels)
+        self.threshold = threshold
+        self.fallback = fallback
         self._label_vectors = None
 
     @property
@@ -40,12 +58,15 @@ class ZeroShotCategorizer:
         return self._label_vectors
 
     def classify(self, embedding) -> tuple[str, float]:
-        """Return (nearest_label, score) for a product embedding."""
+        """Return (category_slug_or_fallback, score) for a product embedding."""
         import numpy as np  # lazy
 
         scores = [_cosine(embedding, lv) for lv in self.label_vectors]
         i = int(np.argmax(scores))
-        return self.labels[i], scores[i]
+        best = scores[i]
+        if self.fallback is not None and best < self.threshold:
+            return self.fallback, best
+        return self.slugs[i], best
 
 
 class ClassifyStage:
